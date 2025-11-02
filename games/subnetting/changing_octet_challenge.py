@@ -1,13 +1,8 @@
 #!/usr/bin/env python3
 """
-Changing Octet Challenge v6 — Guided Learning Edition
------------------------------------------------------
-Trains recognition of which octet changes for a given CIDR or subnet mask.
-Includes:
- • Start menu
- • Explain rules / trial round
- • Global high-score leaderboard
- • Progressive shrinking timer with streak bonuses
+Changing Octet Challenge v6.1 — Dynamic Trial Round Edition
+-----------------------------------------------------------
+Adds a random tutorial example every time you choose "Explain rules / Trial round".
 """
 
 import ipaddress, json, os, random, signal, sys, time
@@ -94,30 +89,41 @@ def explain_rules():
     print("""In IPv4 subnetting, the 'changing octet' is the octet where the network
 boundary stops being fully masked with 255s.
 
-Example:
-  CIDR /24 → 255.255.255.0 → changing octet = 4th
-  CIDR /18 → 255.255.192.0 → changing octet = 3rd
-  CIDR /10 → 255.192.0.0   → changing octet = 2nd
+Example patterns:
+  /24 → 255.255.255.0   → 4th octet changes
+  /18 → 255.255.192.0   → 3rd octet changes
+  /10 → 255.192.0.0     → 2nd octet changes
 
-This game shows either a CIDR (e.g. /27) or a subnet mask
-(e.g. 255.255.255.224).  You must answer which octet changes:
+You’ll be shown either a CIDR (e.g. /27) or a subnet mask (e.g. 255.255.255.224).
+Your job: type which octet changes:
   1 = 1st (e.g. /8)
   2 = 2nd (e.g. /12)
   3 = 3rd (e.g. /20)
   4 = 4th (e.g. /28)
+""")
 
-Let's try one untimed example:""")
-    trial = 26
-    mask = "255.255.255.192"
-    print(f"\nExample CIDR: /{trial} ({mask})")
+    # 🧩 dynamic random trial
+    trial_cidr = random.randint(8, 30)
+    mask = str(ipaddress.ip_network(f"0.0.0.0/{trial_cidr}").netmask)
+    correct = detect_octet(trial_cidr)
+
+    print(f"Let's try an untimed example:\n  CIDR: /{trial_cidr} ({mask})")
     ans = input("👉 Which octet changes (1–4)? ").strip()
-    correct = detect_octet(trial)
+
     if ans == str(correct):
-        print("✅ Correct! The 4th octet changes in /26.\n")
+        print(f"✅ Correct! The {['1st','2nd','3rd','4th'][correct-1]} octet changes in /{trial_cidr}.")
     else:
-        print(f"❌ Not quite. The 4th octet changes in /26.\n")
-        print(visual_explanation(trial))
-    input("Press Enter to return to menu…\n")
+        print(f"❌ Not quite. The {['1st','2nd','3rd','4th'][correct-1]} octet changes in /{trial_cidr}.")
+        print(visual_explanation(trial_cidr))
+
+    # 🧠 explain the reasoning
+    bytes_ = mask.split(".")
+    changing = bytes_[correct - 1]
+    print(f"\nExplanation:")
+    print(f"The mask is {mask}. The first {correct-1} octets are fully 255s, "
+          f"so they’re fixed. The {correct}th octet = {changing}, "
+          "so that’s where subnets increment (the changing octet).")
+    input("\nPress Enter to return to menu…\n")
 
 # ---------- main game ----------
 def play(name, data):
@@ -213,7 +219,7 @@ def play(name, data):
 def main():
     data = load_scores()
     while True:
-        print("=== Changing Octet Challenge v6 ===")
+        print("=== Changing Octet Challenge v6.1 ===")
         print("1) Start new game")
         print("2) Explain rules / Trial round")
         print("3) View global high scores")
