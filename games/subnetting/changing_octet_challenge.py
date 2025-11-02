@@ -1,27 +1,30 @@
 #!/usr/bin/env python3
 """
-Changing Octet Challenge v5.1 — Global Leaderboard Edition
-----------------------------------------------------------
-Keeps every score for a global Top-10 list (not just per player).
-Timer shortens as you progress:
-  • Starts at 10s
-  • -1s after each question, -2s after Q10, -3s after Q20, etc.
+Changing Octet Challenge v6 — Guided Learning Edition
+-----------------------------------------------------
+Trains recognition of which octet changes for a given CIDR or subnet mask.
+Includes:
+ • Start menu
+ • Explain rules / trial round
+ • Global high-score leaderboard
+ • Progressive shrinking timer with streak bonuses
 """
 
 import ipaddress, json, os, random, signal, sys, time
 from datetime import datetime
 
-SCORE_FILE = "changing_octet_v5_scores.json"
+SCORE_FILE = "changing_octet_v6_scores.json"
 BASE_TIME = 10.0
 STREAK_BONUS_TIME = 1.0
 BASE_POINTS = 100
 BONUS_MULTIPLIER = 1.5
 HINT_PENALTY = 50
 WRONG_PENALTY = 75
-MIN_TIME = 2.0  # never go below 2 seconds
+MIN_TIME = 2.0
 
 # ---------- helpers ----------
 def detect_octet(cidr: int) -> int:
+    """Return which octet changes for a given CIDR prefix."""
     for i, b in enumerate(ipaddress.ip_network(f"0.0.0.0/{cidr}").netmask.packed, 1):
         if b != 255:
             return i
@@ -32,8 +35,8 @@ def visual_explanation(cidr: int) -> str:
     bits = ".".join(f"{b:08b}" for b in ipaddress.ip_network(f"0.0.0.0/{cidr}").netmask.packed)
     o = detect_octet(cidr)
     return (
-        f"\n💡 /{cidr}  →  {mask}\nBinary: {bits}\nChanging octet = {o} "
-        f"({['1st','2nd','3rd','4th'][o-1]})\n"
+        f"\n💡  /{cidr}  →  {mask}\nBinary: {bits}\n"
+        f"Changing octet = {o} ({['1st','2nd','3rd','4th'][o-1]})\n"
     )
 
 # ---------- data ----------
@@ -47,8 +50,8 @@ def load_scores():
             data = {}
     else:
         data = {}
-    data.setdefault("players", {})     # per-player tracking
-    data.setdefault("runs", [])        # global history list
+    data.setdefault("players", {})
+    data.setdefault("runs", [])
     return data
 
 def save_scores(data):
@@ -56,13 +59,13 @@ def save_scores(data):
         json.dump(data, f, indent=2)
 
 def show_highscores(data):
-    print("\n🏆 Global High Scores (v5.1)")
+    print("\n🏆 Changing Octet Challenge — Global High Scores")
     if not data["runs"]:
         print("(no runs yet)\n")
         return
     top = sorted(data["runs"], key=lambda x: x["score"], reverse=True)[:10]
     for i, entry in enumerate(top, 1):
-        print(f"{i:>2}. {entry['name']:<12} {entry['score']:>6}  "
+        print(f"{i:>2}. {entry['name']:<12} {entry['score']:>6} "
               f"({entry['streak']} streak, {entry['time']})")
     print()
 
@@ -71,42 +74,71 @@ class Timeout(Exception): pass
 def handler(signum, frame): raise Timeout
 signal.signal(signal.SIGALRM, handler)
 
-# ---------- core ----------
-def get_time_for_question(qnum):
-    """Determine the time allowed based on question number."""
-    if qnum < 10:
-        return BASE_TIME - qnum * 1
-    elif qnum < 20:
-        return BASE_TIME - 9 - (qnum - 9) * 2
-    elif qnum < 30:
-        return BASE_TIME - 9 - 10 * 2 - (qnum - 19) * 3
-    elif qnum < 40:
-        return BASE_TIME - 9 - 10 * 2 - 10 * 3 - (qnum - 29) * 4
+def get_time_for_question(q):
+    """Dynamic shrinking timer."""
+    if q < 10:
+        return BASE_TIME - q * 1
+    elif q < 20:
+        return BASE_TIME - 9 - (q - 9) * 2
+    elif q < 30:
+        return BASE_TIME - 9 - 10 * 2 - (q - 19) * 3
+    elif q < 40:
+        return BASE_TIME - 9 - 10 * 2 - 10 * 3 - (q - 29) * 4
     else:
-        reduction = 9 + 20 + 30 + (qnum - 39) * 5
+        reduction = 9 + 20 + 30 + (q - 39) * 5
         return max(BASE_TIME - reduction, MIN_TIME)
+
+# ---------- tutorial ----------
+def explain_rules():
+    print("\n📘 Changing Octet Challenge – Rules and Example\n")
+    print("""In IPv4 subnetting, the 'changing octet' is the octet where the network
+boundary stops being fully masked with 255s.
+
+Example:
+  CIDR /24 → 255.255.255.0 → changing octet = 4th
+  CIDR /18 → 255.255.192.0 → changing octet = 3rd
+  CIDR /10 → 255.192.0.0   → changing octet = 2nd
+
+This game shows either a CIDR (e.g. /27) or a subnet mask
+(e.g. 255.255.255.224).  You must answer which octet changes:
+  1 = 1st (e.g. /8)
+  2 = 2nd (e.g. /12)
+  3 = 3rd (e.g. /20)
+  4 = 4th (e.g. /28)
+
+Let's try one untimed example:""")
+    trial = 26
+    mask = "255.255.255.192"
+    print(f"\nExample CIDR: /{trial} ({mask})")
+    ans = input("👉 Which octet changes (1–4)? ").strip()
+    correct = detect_octet(trial)
+    if ans == str(correct):
+        print("✅ Correct! The 4th octet changes in /26.\n")
+    else:
+        print(f"❌ Not quite. The 4th octet changes in /26.\n")
+        print(visual_explanation(trial))
+    input("Press Enter to return to menu…\n")
 
 # ---------- main game ----------
 def play(name, data):
-    player = data["players"].get(name, {"highscore": 0, "best_streak": 0})
-    highscore = player.get("highscore", 0)
-    best_streak = player.get("best_streak", 0)
+    p = data["players"].get(name, {"highscore": 0, "best_streak": 0})
+    high = p.get("highscore", 0)
+    best = p.get("best_streak", 0)
     score = 0
     streak = 0
     mult = 1.0
     extra_time = 0.0
-    qnum = 0
+    q = 0
 
-    print(f"\nWelcome {name}! Current high score: {highscore}")
-    print("Timer shortens every 10 questions! +1s per 5-streak bonus.\n")
+    print(f"\nWelcome {name}! Personal high score: {high}\n")
 
     while True:
-        qnum += 1
-        base_time = max(get_time_for_question(qnum), MIN_TIME)
-        time_limit = base_time + extra_time
-        extra_time = 0.0
+        q += 1
+        base_t = max(get_time_for_question(q), MIN_TIME)
+        time_limit = base_t + extra_time
+        extra_time = 0
         if time_limit <= 0:
-            print("\n🕑 Timer exhausted — game over!")
+            print("\n🕑 Timer exhausted!")
             break
 
         cidr = random.randint(0, 30)
@@ -114,8 +146,9 @@ def play(name, data):
         qtype = random.choice(["cidr", "mask"])
         disp = f"/{cidr}" if qtype == "cidr" else mask
         label = "CIDR" if qtype == "cidr" else "Subnet Mask"
+        correct = detect_octet(cidr)
 
-        print(f"\nQ{qnum} | {label}: {disp} | Score:{score} x{mult:.1f} | Time:{time_limit:.1f}s")
+        print(f"\nQ{q} | {label}: {disp} | Score:{score} x{mult:.1f} | Time:{time_limit:.1f}s")
 
         signal.alarm(int(time_limit))
         try:
@@ -137,7 +170,6 @@ def play(name, data):
             print("Enter 1–4, 'h', or 'q'.")
             continue
 
-        correct = detect_octet(cidr)
         if int(ans) == correct:
             base = BASE_POINTS
             if elapsed <= 3:
@@ -145,11 +177,11 @@ def play(name, data):
             if streak and streak % 5 == 0:
                 mult *= BONUS_MULTIPLIER
                 extra_time += STREAK_BONUS_TIME
-                print(f"⚡ 5-Streak! +{STREAK_BONUS_TIME:.0f}s bonus next round, x{mult:.1f}!")
+                print(f"⚡ 5-Streak! +{STREAK_BONUS_TIME:.0f}s bonus, x{mult:.1f} multiplier!")
             pts = int(base * mult)
             score += pts
             streak += 1
-            best_streak = max(best_streak, streak)
+            best = max(best, streak)
             print(f"✅ Correct! +{pts} pts (Streak {streak})\n")
         else:
             print(f"❌ Wrong → {correct} ({['1st','2nd','3rd','4th'][correct-1]})")
@@ -160,46 +192,45 @@ def play(name, data):
             print(f"💀 -{WRONG_PENALTY} pts | Score {score}\n")
 
         if time_limit <= MIN_TIME:
-            print("🕒 Timer reached minimum! Game complete!")
+            print("🕒 Timer minimum reached — game complete!")
             break
 
-    # Save both player best and this run
     data["players"].setdefault(name, {})
-    data["players"][name]["highscore"] = max(highscore, score)
-    data["players"][name]["best_streak"] = max(best_streak, streak)
-
-    run_entry = {
+    data["players"][name]["highscore"] = max(high, score)
+    data["players"][name]["best_streak"] = max(best, streak)
+    data["runs"].append({
         "name": name,
         "score": score,
-        "streak": best_streak,
-        "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
-    }
-    data["runs"].append(run_entry)
-    data["runs"] = data["runs"][-500:]  # keep last 500 runs max
+        "streak": best,
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M")
+    })
+    data["runs"] = data["runs"][-500:]
     save_scores(data)
-
-    print(f"\n=== Session End ===\nScore:{score} | Best Streak:{best_streak}")
-    print(f"🏆 {name}'s Personal High Score: {data['players'][name]['highscore']}\n")
+    print(f"\n=== Session End ===\nScore:{score} | Best Streak:{best}")
+    print(f"🏆 {name}'s High Score: {data['players'][name]['highscore']}\n")
 
 # ---------- menu ----------
 def main():
     data = load_scores()
     while True:
-        print("=== Changing Octet Challenge v5.1 ===")
+        print("=== Changing Octet Challenge v6 ===")
         print("1) Start new game")
-        print("2) View global high scores")
-        print("3) Quit")
+        print("2) Explain rules / Trial round")
+        print("3) View global high scores")
+        print("4) Quit")
         c = input("> ").strip()
         if c == "1":
             name = input("Enter your name: ").strip() or "Player"
             play(name, data)
         elif c == "2":
-            show_highscores(data)
+            explain_rules()
         elif c == "3":
+            show_highscores(data)
+        elif c == "4":
             print("Goodbye!")
             break
         else:
-            print("Choose 1-3.\n")
+            print("Choose 1-4.\n")
 
 if __name__ == "__main__":
     try:
