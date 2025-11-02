@@ -1,23 +1,26 @@
 #!/usr/bin/env python3
 """
-Changing Octet Challenge v4 — Full Menu + Timed Round System
--------------------------------------------------------------
-Each question has its own 10 s countdown.
- +1 s bonus after every 5-correct streak.
-Stores a named high-score leaderboard.
+Changing Octet Challenge v4 — Leaderboard Edition
+-------------------------------------------------
+Full standalone game with:
+ • Start menu
+ • Named players
+ • 10-second per-question timer
+ • +1 s after every 5-streak
+ • High-score leaderboard (top 10)
 """
 
 import ipaddress, json, os, random, signal, sys, time
 
-PROGRESS_FILE = "subnet_snap_progress.json"
+SCORE_FILE = "changing_octet_v4_scores.json"
+QUESTION_TIME = 10.0
+STREAK_BONUS_TIME = 1.0
 BASE_POINTS = 100
 BONUS_MULTIPLIER = 1.5
 HINT_PENALTY = 50
 WRONG_PENALTY = 75
-STREAK_BONUS_TIME = 1.0
-QUESTION_TIME = 10.0
 
-# -------- utilities --------
+# ---------- helpers ----------
 def detect_octet(cidr:int)->int:
     for i,b in enumerate(ipaddress.ip_network(f"0.0.0.0/{cidr}").netmask.packed,1):
         if b!=255: return i
@@ -25,46 +28,47 @@ def detect_octet(cidr:int)->int:
 
 def visual_explanation(cidr:int)->str:
     mask=str(ipaddress.ip_network(f"0.0.0.0/{cidr}").netmask)
-    bits=".".join(f"{b:08b}" for b in ipaddress.ip_network(f'0.0.0.0/{cidr}').netmask.packed)
+    bits=".".join(f"{b:08b}" for b in ipaddress.ip_network(f"0.0.0.0/{cidr}").netmask.packed)
     o=detect_octet(cidr)
-    return (f"\n💡  /{cidr}  →  {mask}\nBinary: {bits}\nChanging octet = {o} "
+    return (f"\n💡 /{cidr}  →  {mask}\nBinary: {bits}\nChanging octet = {o} "
             f"({['1st','2nd','3rd','4th'][o-1]})\n")
 
 def load_scores():
-    if os.path.exists(PROGRESS_FILE):
-        try: return json.load(open(PROGRESS_FILE))
-        except: pass
-    return {"scores":{}}
+    if os.path.exists(SCORE_FILE):
+        try:
+            data=json.load(open(SCORE_FILE))
+            if not isinstance(data,dict): data={}
+        except Exception: data={}
+    else: data={}
+    data.setdefault("players",{})
+    return data
 
 def save_scores(data):
-    with open(PROGRESS_FILE,"w") as f: json.dump(data,f,indent=2)
+    with open(SCORE_FILE,"w") as f: json.dump(data,f,indent=2)
 
 def show_highscores(data):
-    print("\n🏆 High Scores")
-    all_scores=[]
-    for name,info in data["scores"].items():
-        all_scores.append((info.get("highscore",0),name))
-    for i,(s,n) in enumerate(sorted(all_scores,reverse=True)[:10],1):
-        print(f"{i:>2}. {n:<15} {s}")
-    if not all_scores: print("(no scores yet)")
+    print("\n🏆 High Scores (v4)")
+    entries=[(v.get("highscore",0),k) for k,v in data["players"].items()]
+    entries.sort(reverse=True)
+    if not entries: print("(no scores yet)")
+    for i,(s,name) in enumerate(entries[:10],1):
+        print(f"{i:>2}. {name:<15} {s}")
     print()
 
-# -------- timer helper --------
+# ---------- timer ----------
 class Timeout(Exception): pass
-def handler(signum, frame): raise Timeout
-signal.signal(signal.SIGALRM, handler)
+def handler(signum,frame): raise Timeout
+signal.signal(signal.SIGALRM,handler)
 
-# -------- main game --------
+# ---------- main game ----------
 def play(name,data):
-    high=data["scores"].get(name,{"highscore":0,"best_streak":0})
-    highscore=high.get("highscore",0)
-    best_streak=high.get("best_streak",0)
+    player=data["players"].get(name,{"highscore":0,"best_streak":0})
+    highscore=player.get("highscore",0)
+    best_streak=player.get("best_streak",0)
+    score=0; streak=0; mult=1.0; extra_time=0.0
 
-    score=0; streak=0; mult=1.0
-
-    print(f"\nWelcome {name}! Your current high score: {highscore}\n")
-    print("Identify which octet (1-4) changes for the CIDR or mask.")
-    print("10 s per question → 5-streak adds +1 s. 'h' = hint, 'q' = quit.\n")
+    print(f"\nWelcome {name}! Current high score: {highscore}")
+    print("10 s per question → every 5-streak adds +1 s bonus.\n")
 
     while True:
         cidr=random.randint(0,30)
@@ -72,9 +76,11 @@ def play(name,data):
         qtype=random.choice(["cidr","mask"])
         disp=f"/{cidr}" if qtype=="cidr" else mask
         label="CIDR" if qtype=="cidr" else "Subnet Mask"
+        time_limit=QUESTION_TIME+extra_time
+        extra_time=0.0
 
-        print(f"📘 {label}: {disp}  | Score:{score} x{mult:.1f} | Time: {QUESTION_TIME:.1f}s")
-        signal.alarm(int(QUESTION_TIME))
+        print(f"📘 {label}: {disp} | Score:{score} x{mult:.1f} | Time:{time_limit:.1f}s")
+        signal.alarm(int(time_limit))
         try:
             start=time.time()
             ans=input("👉 Which octet changes (1-4)? ").strip().lower()
@@ -90,16 +96,16 @@ def play(name,data):
             score=max(0,score-HINT_PENALTY)
             continue
         if not ans.isdigit() or not (1<=int(ans)<=4):
-            print("Enter 1–4 or 'h' or 'q'."); continue
+            print("Enter 1-4 or 'h' or 'q'."); continue
 
         correct=detect_octet(cidr)
         if int(ans)==correct:
             base=BASE_POINTS
             if elapsed<=3: base+=50
             if streak and streak%5==0:
-                QUESTION_TIME_PLUS=STREAK_BONUS_TIME
-                print(f"⚡ 5-Streak! +{QUESTION_TIME_PLUS:.0f}s bonus next round!")
-            if streak and streak%5==0: mult*=BONUS_MULTIPLIER
+                mult*=BONUS_MULTIPLIER
+                extra_time+=STREAK_BONUS_TIME
+                print(f"⚡ 5-Streak! +{STREAK_BONUS_TIME:.0f}s bonus next round and x{mult:.1f} multiplier!")
             pts=int(base*mult)
             score+=pts; streak+=1
             best_streak=max(best_streak,streak)
@@ -111,15 +117,15 @@ def play(name,data):
             streak=0; mult=1.0
             print(f"💀 -{WRONG_PENALTY} pts | Score {score}\n")
 
-    # ---- save results ----
-    data["scores"].setdefault(name,{})
-    data["scores"][name]["highscore"]=max(highscore,score)
-    data["scores"][name]["best_streak"]=max(best_streak,streak)
+    # save
+    data["players"].setdefault(name,{})
+    data["players"][name]["highscore"]=max(highscore,score)
+    data["players"][name]["best_streak"]=max(best_streak,streak)
     save_scores(data)
-    print(f"\n=== Session End ===\nScore:{score}  Best Streak:{best_streak}\n")
-    print(f"🏆 High Score ({name}): {data['scores'][name]['highscore']}\n")
+    print(f"\n=== Session End ===\nScore:{score} Best Streak:{best_streak}")
+    print(f"🏆 {name} High Score: {data['players'][name]['highscore']}\n")
 
-# -------- main menu --------
+# ---------- menu ----------
 def main():
     data=load_scores()
     while True:
