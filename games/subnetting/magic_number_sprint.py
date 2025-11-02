@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
 """
-Magic Number Sprint — Timed Subnet Reflex Trainer
--------------------------------------------------
-Identify the "magic number" (block size) for a CIDR or subnet mask.
-
- • Start menu + player names
+Magic Number Sprint v2 — Guided Learning Edition
+------------------------------------------------
+Trains quick recognition of the "magic number" (block size) for a CIDR or mask.
+Includes:
+ • Rules / example mode
+ • Timed competitive mode
  • Global high-score leaderboard
- • 10 s base timer that shrinks as questions progress
- • +1 s per 5-streak
- • Multipliers, hints, penalties
 """
 
 import ipaddress, json, os, random, signal, sys, time
 from datetime import datetime
 
-SCORE_FILE = "magic_number_sprint_scores.json"
+SCORE_FILE = "magic_number_sprint_v2_scores.json"
 BASE_TIME = 10.0
 STREAK_BONUS_TIME = 1.0
 BASE_POINTS = 100
@@ -30,27 +28,26 @@ def detect_octet(cidr:int)->int:
     return 4
 
 def magic_number(cidr:int)->int:
-    """Return increment size (magic number) in changing octet."""
-    net = ipaddress.ip_network(f"0.0.0.0/{cidr}")
-    octet = detect_octet(cidr)
-    mask_bytes = list(net.netmask.packed)
-    val = 256 - mask_bytes[octet-1]
+    net=ipaddress.ip_network(f"0.0.0.0/{cidr}")
+    octet=detect_octet(cidr)
+    mask_bytes=list(net.netmask.packed)
+    val=256-mask_bytes[octet-1]
     return val if val>0 else 256
 
 def visual_hint(cidr:int)->str:
-    mask = str(ipaddress.ip_network(f"0.0.0.0/{cidr}").netmask)
-    octet = detect_octet(cidr)
-    mnum = magic_number(cidr)
-    return (f"\n💡 /{cidr} → {mask}\nChanging octet: {octet}\n"
-            f"Magic number = {mnum}\nExample ranges in that octet:\n"
+    mask=str(ipaddress.ip_network(f"0.0.0.0/{cidr}").netmask)
+    octet=detect_octet(cidr)
+    mnum=magic_number(cidr)
+    return (f"\n💡 /{cidr} → {mask}\nChanging octet = {octet}\n"
+            f"Magic number = {mnum}\nExample ranges: "
             + ", ".join(f"{i}-{i+mnum-1}" for i in range(0,256,mnum)[:8]) + " ...\n")
 
-# ---------- data ----------
+# ---------- storage ----------
 def load_scores():
     if os.path.exists(SCORE_FILE):
         try:
-            data = json.load(open(SCORE_FILE))
-            if not isinstance(data, dict): data={}
+            data=json.load(open(SCORE_FILE))
+            if not isinstance(data,dict): data={}
         except Exception: data={}
     else: data={}
     data.setdefault("players",{})
@@ -61,13 +58,12 @@ def save_scores(data):
     with open(SCORE_FILE,"w") as f: json.dump(data,f,indent=2)
 
 def show_highscores(data):
-    print("\n🏆 Magic Number Sprint High Scores")
+    print("\n🏆 Magic Number Sprint Top 10")
     if not data["runs"]:
         print("(no runs yet)\n"); return
-    top = sorted(data["runs"], key=lambda x:x["score"], reverse=True)[:10]
+    top=sorted(data["runs"],key=lambda x:x["score"],reverse=True)[:10]
     for i,r in enumerate(top,1):
-        print(f"{i:>2}. {r['name']:<12} {r['score']:>6}  "
-              f"({r['streak']} streak, {r['time']})")
+        print(f"{i:>2}. {r['name']:<12} {r['score']:>6} ({r['streak']} streak, {r['time']})")
     print()
 
 # ---------- timer ----------
@@ -76,7 +72,6 @@ def handler(signum, frame): raise Timeout
 signal.signal(signal.SIGALRM, handler)
 
 def get_time_for_question(q):
-    """Dynamic shrinking timer like Changing Octet v5."""
     if q<10: return BASE_TIME-q*1
     elif q<20: return BASE_TIME-9-(q-9)*2
     elif q<30: return BASE_TIME-9-10*2-(q-19)*3
@@ -85,7 +80,35 @@ def get_time_for_question(q):
         reduction = 9+20+30+(q-39)*5
         return max(BASE_TIME-reduction, MIN_TIME)
 
-# ---------- main game ----------
+# ---------- trial / tutorial ----------
+def explain_rules():
+    print("\n📘 Magic Number Sprint – Rules and Example")
+    print("""
+A subnet's *magic number* (block size) is how much the *changing octet* increases between subnets.
+
+Example:
+  CIDR /26 → 255.255.255.192
+  256 – 192 = 64 → magic number = 64
+
+That means subnets start at:
+  0–63, 64–127, 128–191, 192–255 (in the last octet).
+
+You'll be shown a CIDR prefix or a mask.
+Type the correct magic number.
+""")
+    # trial round
+    print("\nLet's try one untimed example:")
+    trial_cidr=26
+    mask="255.255.255.192"
+    print(f"Example CIDR: /{trial_cidr} ({mask})")
+    ans=input("👉 Enter the magic number: ").strip()
+    if ans=="64": print("✅ Correct! /26 → 64 block size.\n")
+    else:
+        print("❌ Not quite. The answer is 64.\n")
+        print(visual_hint(trial_cidr))
+    input("Press Enter to return to menu…\n")
+
+# ---------- game core ----------
 def play(name,data):
     p=data["players"].get(name,{"highscore":0,"best_streak":0})
     high=p.get("highscore",0); best=p.get("best_streak",0)
@@ -96,7 +119,8 @@ def play(name,data):
         q+=1
         base_t=max(get_time_for_question(q),MIN_TIME)
         time_limit=base_t+extra_time; extra_time=0
-        if time_limit<=0: print("\n🕑 Timer exhausted!"); break
+        if time_limit<=0:
+            print("\n🕑 Timer exhausted!"); break
 
         cidr=random.randint(0,30)
         mask=str(ipaddress.ip_network(f"0.0.0.0/{cidr}").netmask)
@@ -145,7 +169,6 @@ def play(name,data):
             print("🕒 Timer minimum reached — game complete!")
             break
 
-    # record
     data["players"].setdefault(name,{})
     data["players"][name]["highscore"]=max(high,score)
     data["players"][name]["best_streak"]=max(best,streak)
@@ -162,18 +185,21 @@ def play(name,data):
 def main():
     data=load_scores()
     while True:
-        print("=== Magic Number Sprint ===")
+        print("=== Magic Number Sprint v2 ===")
         print("1) Start new game")
-        print("2) View global high scores")
-        print("3) Quit")
+        print("2) Explain rules / Trial round")
+        print("3) View global high scores")
+        print("4) Quit")
         c=input("> ").strip()
         if c=="1":
             name=input("Enter your name: ").strip() or "Player"
             play(name,data)
-        elif c=="2": show_highscores(data)
-        elif c=="3":
+        elif c=="2": explain_rules()
+        elif c=="3": show_highscores(data)
+        elif c=="4":
             print("Goodbye!"); break
-        else: print("Choose 1-3.\n")
+        else:
+            print("Choose 1-4.\n")
 
 if __name__=="__main__":
     try: main()
