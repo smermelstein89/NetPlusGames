@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Changing Octet Challenge v5 — Dynamic Timer Edition
----------------------------------------------------
-Each question starts with a timer that shortens as you progress:
+Changing Octet Challenge v5.1 — Global Leaderboard Edition
+----------------------------------------------------------
+Keeps every score for a global Top-10 list (not just per player).
+Timer shortens as you progress:
   • Starts at 10s
-  • After Q10, -2s per question
-  • After Q20, -3s per question, etc.
-Game ends automatically when timer <= 0.
+  • -1s after each question, -2s after Q10, -3s after Q20, etc.
 """
 
 import ipaddress, json, os, random, signal, sys, time
+from datetime import datetime
 
 SCORE_FILE = "changing_octet_v5_scores.json"
 BASE_TIME = 10.0
@@ -36,6 +36,7 @@ def visual_explanation(cidr: int) -> str:
         f"({['1st','2nd','3rd','4th'][o-1]})\n"
     )
 
+# ---------- data ----------
 def load_scores():
     if os.path.exists(SCORE_FILE):
         try:
@@ -46,7 +47,8 @@ def load_scores():
             data = {}
     else:
         data = {}
-    data.setdefault("players", {})
+    data.setdefault("players", {})     # per-player tracking
+    data.setdefault("runs", [])        # global history list
     return data
 
 def save_scores(data):
@@ -54,18 +56,18 @@ def save_scores(data):
         json.dump(data, f, indent=2)
 
 def show_highscores(data):
-    print("\n🏆 High Scores (v5)")
-    entries = [(v.get("highscore", 0), k) for k, v in data["players"].items()]
-    entries.sort(reverse=True)
-    if not entries:
-        print("(no scores yet)")
-    for i, (s, name) in enumerate(entries[:10], 1):
-        print(f"{i:>2}. {name:<15} {s}")
+    print("\n🏆 Global High Scores (v5.1)")
+    if not data["runs"]:
+        print("(no runs yet)\n")
+        return
+    top = sorted(data["runs"], key=lambda x: x["score"], reverse=True)[:10]
+    for i, entry in enumerate(top, 1):
+        print(f"{i:>2}. {entry['name']:<12} {entry['score']:>6}  "
+              f"({entry['streak']} streak, {entry['time']})")
     print()
 
 # ---------- timer ----------
-class Timeout(Exception):
-    pass
+class Timeout(Exception): pass
 def handler(signum, frame): raise Timeout
 signal.signal(signal.SIGALRM, handler)
 
@@ -81,7 +83,6 @@ def get_time_for_question(qnum):
     elif qnum < 40:
         return BASE_TIME - 9 - 10 * 2 - 10 * 3 - (qnum - 29) * 4
     else:
-        # keep increasing rate
         reduction = 9 + 20 + 30 + (qnum - 39) * 5
         return max(BASE_TIME - reduction, MIN_TIME)
 
@@ -158,26 +159,35 @@ def play(name, data):
             mult = 1.0
             print(f"💀 -{WRONG_PENALTY} pts | Score {score}\n")
 
-        # End game when timer per question gets too short
         if time_limit <= MIN_TIME:
             print("🕒 Timer reached minimum! Game complete!")
             break
 
-    # Save
+    # Save both player best and this run
     data["players"].setdefault(name, {})
     data["players"][name]["highscore"] = max(highscore, score)
     data["players"][name]["best_streak"] = max(best_streak, streak)
+
+    run_entry = {
+        "name": name,
+        "score": score,
+        "streak": best_streak,
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+    }
+    data["runs"].append(run_entry)
+    data["runs"] = data["runs"][-500:]  # keep last 500 runs max
     save_scores(data)
+
     print(f"\n=== Session End ===\nScore:{score} | Best Streak:{best_streak}")
-    print(f"🏆 {name}'s High Score: {data['players'][name]['highscore']}\n")
+    print(f"🏆 {name}'s Personal High Score: {data['players'][name]['highscore']}\n")
 
 # ---------- menu ----------
 def main():
     data = load_scores()
     while True:
-        print("=== Changing Octet Challenge v5 ===")
+        print("=== Changing Octet Challenge v5.1 ===")
         print("1) Start new game")
-        print("2) View high scores")
+        print("2) View global high scores")
         print("3) Quit")
         c = input("> ").strip()
         if c == "1":
