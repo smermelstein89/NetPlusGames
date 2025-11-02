@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-Magic Number Sprint v2.1 — Guided Learning Edition (Dynamic Trial)
-------------------------------------------------------------------
-Adds a random, untimed example in the rules section so each tutorial is unique.
+Magic Number Sprint v2.2 — Extended Time Edition
+------------------------------------------------
+Same as v2.1, but increases the per-question base timer to 30 seconds.
 """
 
 import ipaddress, json, os, random, signal, sys, time
 from datetime import datetime
 
 SCORE_FILE = "magic_number_sprint_v2_scores.json"
-BASE_TIME = 10.0
+BASE_TIME = 30.0              # ⏰ Increased from 10 to 30
 STREAK_BONUS_TIME = 1.0
 BASE_POINTS = 100
 BONUS_MULTIPLIER = 1.5
 HINT_PENALTY = 50
 WRONG_PENALTY = 75
-MIN_TIME = 2.0
+MIN_TIME = 5.0                # ⏳ allow longer floor since timer starts higher
 
 # ---------- helpers ----------
 def detect_octet(cidr:int)->int:
@@ -38,7 +38,7 @@ def visual_hint(cidr:int)->str:
             f"Magic number = {mnum}\nExample ranges: "
             + ", ".join(f"{i}-{i+mnum-1}" for i in range(0,256,mnum)[:8]) + " ...\n")
 
-# ---------- storage ----------
+# ---------- data ----------
 def load_scores():
     if os.path.exists(SCORE_FILE):
         try:
@@ -68,15 +68,16 @@ def handler(signum, frame): raise Timeout
 signal.signal(signal.SIGALRM, handler)
 
 def get_time_for_question(q):
-    if q<10: return BASE_TIME-q*1
-    elif q<20: return BASE_TIME-9-(q-9)*2
-    elif q<30: return BASE_TIME-9-10*2-(q-19)*3
-    elif q<40: return BASE_TIME-9-10*2-10*3-(q-29)*4
+    """Dynamic timer curve starting from 30 seconds."""
+    if q<10: return BASE_TIME - q*2
+    elif q<20: return BASE_TIME - 18 - (q-9)*3
+    elif q<30: return BASE_TIME - 18 - 10*3 - (q-19)*4
+    elif q<40: return BASE_TIME - 18 - 10*3 - 10*4 - (q-29)*5
     else:
-        reduction = 9+20+30+(q-39)*5
-        return max(BASE_TIME-reduction, MIN_TIME)
+        reduction = 18 + 30 + 40 + (q-39)*6
+        return max(BASE_TIME - reduction, MIN_TIME)
 
-# ---------- trial / tutorial ----------
+# ---------- tutorial ----------
 def explain_rules():
     print("\n📘 Magic Number Sprint – Rules and Example")
     print("""
@@ -94,7 +95,6 @@ You'll be shown a CIDR prefix or a mask.
 Type the correct magic number — the block size for that subnet.
 """)
 
-    # dynamic random trial
     trial_cidr = random.randint(8, 30)
     mask = str(ipaddress.ip_network(f"0.0.0.0/{trial_cidr}").netmask)
     correct = magic_number(trial_cidr)
@@ -114,7 +114,7 @@ Type the correct magic number — the block size for that subnet.
           f"so each subnet increases by {correct}.")
     input("\nPress Enter to return to menu…\n")
 
-# ---------- game core ----------
+# ---------- game ----------
 def play(name,data):
     p=data["players"].get(name,{"highscore":0,"best_streak":0})
     high=p.get("highscore",0); best=p.get("best_streak",0)
@@ -190,7 +190,7 @@ def play(name,data):
 def main():
     data=load_scores()
     while True:
-        print("=== Magic Number Sprint v2.1 ===")
+        print("=== Magic Number Sprint v2.2 (Extended Time) ===")
         print("1) Start new game")
         print("2) Explain rules / Trial round")
         print("3) View global high scores")
