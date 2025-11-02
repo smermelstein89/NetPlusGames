@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Subnetting Practice Game - "7 Second Subnetting"
------------------------------------------------
-Test your speed and accuracy in subnetting!
-Tracks your high scores across sessions in 'highscores.json'.
+7-Second Subnetting Game (with Hints)
+-------------------------------------
+Practice subnetting using the magic number method.
+Type 'h' at any answer prompt to get a hint (penalty applied).
 
-By Scott’s request – designed to reinforce the 7-second subnetting method.
+Tracks high scores in highscores.json.
 """
 
 import ipaddress
@@ -35,19 +35,13 @@ def print_highscores(highscores):
         print(f"{i}. {entry['name']} — {entry['score']} pts — {entry['time']:.1f}s avg")
 
 def generate_random_ip():
-    # pick a random private range
-    private_ranges = [
-        ("10.0.0.0", 8),
-        ("172.16.0.0", 12),
-        ("192.168.0.0", 16)
-    ]
+    private_ranges = [("10.0.0.0", 8), ("172.16.0.0", 12), ("192.168.0.0", 16)]
     base, base_prefix = random.choice(private_ranges)
     network = ipaddress.ip_network(f"{base}/{base_prefix}", strict=False)
     host = random.choice(list(network.hosts()))
     return str(host)
 
 def generate_random_cidr():
-    # CIDR range 16–30 for realistic practice
     return random.randint(16, 30)
 
 def calculate_magic_number(cidr):
@@ -67,6 +61,18 @@ def get_network_info(ip, cidr):
     net = ipaddress.ip_network(f"{ip}/{cidr}", strict=False)
     return str(net.network_address), str(net.broadcast_address)
 
+def hint_magic_number(cidr):
+    # show subnet mask & octet breakdown
+    mask = str(ipaddress.ip_network(f"0.0.0.0/{cidr}").netmask)
+    return f"Mask: {mask} → 256 - last non-255 octet = ?"
+
+def hint_network_address(ip, cidr):
+    magic = calculate_magic_number(cidr)
+    return f"Check the octet where the mask changes. Subnets go by {magic}s."
+
+def hint_broadcast_address():
+    return "Broadcast = last address in the subnet (network + block_size - 1)."
+
 def play_round():
     ip = generate_random_ip()
     cidr = generate_random_cidr()
@@ -74,34 +80,53 @@ def play_round():
     net, bc = get_network_info(ip, cidr)
 
     print(f"\n🔹 IP: {ip}/{cidr}")
-    print("Type your answers:")
+    print("Type your answers (or 'h' for a hint).")
 
     start = time.time()
-
-    user_magic = input("Magic number: ").strip()
-    user_net = input("Network address: ").strip()
-    user_bc = input("Broadcast address: ").strip()
-
-    elapsed = time.time() - start
     score = 0
+    penalties = 0
 
+    # --- Magic Number ---
+    user_magic = input("Magic number: ").strip()
+    if user_magic.lower() == "h":
+        print("💡 Hint:", hint_magic_number(cidr))
+        penalties += 1
+        user_magic = input("Magic number: ").strip()
     if user_magic == str(magic):
         score += 1
+
+    # --- Network Address ---
+    user_net = input("Network address: ").strip()
+    if user_net.lower() == "h":
+        print("💡 Hint:", hint_network_address(ip, cidr))
+        penalties += 1
+        user_net = input("Network address: ").strip()
     if user_net == net:
         score += 2
+
+    # --- Broadcast Address ---
+    user_bc = input("Broadcast address: ").strip()
+    if user_bc.lower() == "h":
+        print("💡 Hint:", hint_broadcast_address())
+        penalties += 1
+        user_bc = input("Broadcast address: ").strip()
     if user_bc == bc:
         score += 2
+
+    elapsed = time.time() - start
+    penalty_points = penalties * 0.5
+    score = max(0, score - penalty_points)
 
     print(f"\n✅ Correct answers:")
     print(f"   Magic number: {magic}")
     print(f"   Network: {net}")
     print(f"   Broadcast: {bc}")
-    print(f"⏱  Time: {elapsed:.1f}s  |  Score this round: {score}\n")
+    print(f"⏱  Time: {elapsed:.1f}s  |  Score this round: {score} (−{penalty_points} hint penalty)\n")
 
     return score, elapsed
 
 def main():
-    print("=== 🧮 7-Second Subnetting Game ===")
+    print("=== 🧮 7-Second Subnetting Game (with Hints) ===")
     highscores = load_highscores()
     print_highscores(highscores)
 
@@ -117,7 +142,7 @@ def main():
         total_time += t
 
     avg_time = total_time / rounds
-    print(f"\n🏁 Final Score: {total_score} points")
+    print(f"\n🏁 Final Score: {total_score:.1f} points")
     print(f"⌛ Average Time per Round: {avg_time:.1f} seconds")
 
     highscores.append({
