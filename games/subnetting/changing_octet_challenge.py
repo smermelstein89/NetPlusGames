@@ -1,173 +1,144 @@
 #!/usr/bin/env python3
 """
-Changing Octet Challenge v3 — Timed Reflex Mode
-------------------------------------------------
-Arcade-style subnet reflex trainer:
- - Starts with 10 seconds total
- - Time slowly decreases per question
- - Wrong answers cut more time
- - Increasing difficulty, combos, score multipliers
- - Ends automatically when timer hits zero
+Changing Octet Challenge v4 — Full Menu + Timed Round System
+-------------------------------------------------------------
+Each question has its own 10 s countdown.
+ +1 s bonus after every 5-correct streak.
+Stores a named high-score leaderboard.
 """
 
-import ipaddress, random, time, json, os, sys
+import ipaddress, json, os, random, signal, sys, time
 
 PROGRESS_FILE = "subnet_snap_progress.json"
-
-# Difficulty progression
-DIFFICULTY = [
-    (0,   range(24, 31)),  # Easy — last octet
-    (15,  range(16, 31)),  # Medium — adds 3rd octet
-    (30,  range(8, 31)),   # Hard — adds 2nd octet
-    (50,  range(0, 31)),   # Expert — all octets
-]
-
 BASE_POINTS = 100
 BONUS_MULTIPLIER = 1.5
-TIME_BONUS_CUTOFF = 3.0
-TIME_PENALTY_CUTOFF = 6.0
 HINT_PENALTY = 50
 WRONG_PENALTY = 75
+STREAK_BONUS_TIME = 1.0
+QUESTION_TIME = 10.0
 
-# Timer behavior
-START_TIME = 10.0        # seconds to start
-TIME_DECAY_PER_Q = 0.3   # time lost per question
-WRONG_TIME_PENALTY = 1.5 # extra time lost on wrong answer
-TIME_BONUS_ON_CORRECT = 0.2 # regain a tiny bit for fast answers
-
-# ---------- Helpers ----------
-def detect_changing_octet(cidr: int) -> int:
-    mask_bytes = list(ipaddress.ip_network(f"0.0.0.0/{cidr}").netmask.packed)
-    for i, b in enumerate(mask_bytes, 1):
-        if b != 255:
-            return i
+# -------- utilities --------
+def detect_octet(cidr:int)->int:
+    for i,b in enumerate(ipaddress.ip_network(f"0.0.0.0/{cidr}").netmask.packed,1):
+        if b!=255: return i
     return 4
 
-def binary_mask_visual(cidr: int) -> str:
-    mask_bytes = list(ipaddress.ip_network(f"0.0.0.0/{cidr}").netmask.packed)
-    bits = ["{0:08b}".format(b) for b in mask_bytes]
-    return ".".join(bits)
+def visual_explanation(cidr:int)->str:
+    mask=str(ipaddress.ip_network(f"0.0.0.0/{cidr}").netmask)
+    bits=".".join(f"{b:08b}" for b in ipaddress.ip_network(f'0.0.0.0/{cidr}').netmask.packed)
+    o=detect_octet(cidr)
+    return (f"\n💡  /{cidr}  →  {mask}\nBinary: {bits}\nChanging octet = {o} "
+            f"({['1st','2nd','3rd','4th'][o-1]})\n")
 
-def visual_explanation(cidr: int) -> str:
-    mask = str(ipaddress.ip_network(f"0.0.0.0/{cidr}").netmask)
-    binary_mask = binary_mask_visual(cidr)
-    changing = detect_changing_octet(cidr)
-    return (
-        f"\n💡 Explanation:\n"
-        f"CIDR: /{cidr}\n"
-        f"Mask: {mask}\n"
-        f"Binary: {binary_mask}\n"
-        f"Changing octet = {changing} ({['1st','2nd','3rd','4th'][changing-1]} octet)\n"
-    )
-
-def load_progress():
+def load_scores():
     if os.path.exists(PROGRESS_FILE):
+        try: return json.load(open(PROGRESS_FILE))
+        except: pass
+    return {"scores":{}}
+
+def save_scores(data):
+    with open(PROGRESS_FILE,"w") as f: json.dump(data,f,indent=2)
+
+def show_highscores(data):
+    print("\n🏆 High Scores")
+    all_scores=[]
+    for name,info in data["scores"].items():
+        all_scores.append((info.get("highscore",0),name))
+    for i,(s,n) in enumerate(sorted(all_scores,reverse=True)[:10],1):
+        print(f"{i:>2}. {n:<15} {s}")
+    if not all_scores: print("(no scores yet)")
+    print()
+
+# -------- timer helper --------
+class Timeout(Exception): pass
+def handler(signum, frame): raise Timeout
+signal.signal(signal.SIGALRM, handler)
+
+# -------- main game --------
+def play(name,data):
+    high=data["scores"].get(name,{"highscore":0,"best_streak":0})
+    highscore=high.get("highscore",0)
+    best_streak=high.get("best_streak",0)
+
+    score=0; streak=0; mult=1.0
+
+    print(f"\nWelcome {name}! Your current high score: {highscore}\n")
+    print("Identify which octet (1-4) changes for the CIDR or mask.")
+    print("10 s per question → 5-streak adds +1 s. 'h' = hint, 'q' = quit.\n")
+
+    while True:
+        cidr=random.randint(0,30)
+        mask=str(ipaddress.ip_network(f"0.0.0.0/{cidr}").netmask)
+        qtype=random.choice(["cidr","mask"])
+        disp=f"/{cidr}" if qtype=="cidr" else mask
+        label="CIDR" if qtype=="cidr" else "Subnet Mask"
+
+        print(f"📘 {label}: {disp}  | Score:{score} x{mult:.1f} | Time: {QUESTION_TIME:.1f}s")
+        signal.alarm(int(QUESTION_TIME))
         try:
-            with open(PROGRESS_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {"changing_octet_highscore": 0, "changing_octet_best_streak": 0}
-
-def save_progress(p):
-    with open(PROGRESS_FILE, "w") as f:
-        json.dump(p, f, indent=2)
-
-def pick_cidr(score: int):
-    allowed = range(24, 31)
-    for threshold, rng in DIFFICULTY:
-        if score >= threshold:
-            allowed = rng
-    return random.choice(allowed)
-
-# ---------- Game ----------
-def play():
-    progress = load_progress()
-    highscore = progress.get("changing_octet_highscore", 0)
-    best_streak = progress.get("changing_octet_best_streak", 0)
-    score = 0
-    streak = 0
-    multiplier = 1.0
-    time_left = START_TIME
-    question_count = 0
-
-    print("=== ⏱️ Changing Octet Challenge v3 — Timed Reflex Mode ===")
-    print("Identify which octet changes before the timer hits zero!")
-    print(f"Start time: {START_TIME:.1f}s | Each round gets faster!")
-    print("Use 'h' for hint (-50 pts, -0.5s), 'q' to quit.\n")
-
-    while time_left > 0:
-        cidr = pick_cidr(score)
-        mask = str(ipaddress.ip_network(f"0.0.0.0/{cidr}").netmask)
-        question_type = random.choice(["cidr", "mask"])
-        display = f"/{cidr}" if question_type == "cidr" else mask
-        label = "CIDR" if question_type == "cidr" else "Subnet Mask"
-
-        print(f"\n⏱️ Time Left: {time_left:.1f}s | Score: {score} | x{multiplier:.1f}")
-        print(f"📘 {label}: {display}")
-
-        start_time = time.time()
-        ans = input("👉 Which octet changes (1–4)? ").strip().lower()
-        elapsed = time.time() - start_time
-        time_left -= elapsed  # subtract response time
-        question_count += 1
-        time_left -= TIME_DECAY_PER_Q  # shrink available time each round
-
-        if ans in ("q", "quit", "exit"):
+            start=time.time()
+            ans=input("👉 Which octet changes (1-4)? ").strip().lower()
+            signal.alarm(0)
+        except Timeout:
+            print("\n⏰ Time up!")
             break
-        if ans in ("h", "hint"):
+
+        elapsed=time.time()-start
+        if ans in ("q","quit","exit"): break
+        if ans in ("h","hint"):
             print(visual_explanation(cidr))
-            score = max(0, score - HINT_PENALTY)
-            time_left -= 0.5
-            print(f"🔹 Hint used (-{HINT_PENALTY} pts, -0.5s). Score:{score}\n")
+            score=max(0,score-HINT_PENALTY)
             continue
+        if not ans.isdigit() or not (1<=int(ans)<=4):
+            print("Enter 1–4 or 'h' or 'q'."); continue
 
-        if not ans.isdigit() or not (1 <= int(ans) <= 4):
-            print("Please enter 1–4, 'h', or 'q'.")
-            continue
-
-        correct_octet = detect_changing_octet(cidr)
-        ans_int = int(ans)
-
-        if ans_int == correct_octet:
-            base = BASE_POINTS
-            if elapsed <= TIME_BONUS_CUTOFF: base += 50; time_left += TIME_BONUS_ON_CORRECT
-            elif elapsed > TIME_PENALTY_CUTOFF: base -= 25
-            if streak and streak % 5 == 0:
-                multiplier *= BONUS_MULTIPLIER
-                print("🔥 Combo multiplier increased!")
-            points = int(base * multiplier)
-            score += points
-            streak += 1
-            best_streak = max(best_streak, streak)
-            print(f"✅ Correct! Changing octet: {correct_octet} ({['1st','2nd','3rd','4th'][correct_octet-1]})")
-            print(f"⏱ {elapsed:.1f}s | +{points} pts | Streak:{streak}\n")
+        correct=detect_octet(cidr)
+        if int(ans)==correct:
+            base=BASE_POINTS
+            if elapsed<=3: base+=50
+            if streak and streak%5==0:
+                QUESTION_TIME_PLUS=STREAK_BONUS_TIME
+                print(f"⚡ 5-Streak! +{QUESTION_TIME_PLUS:.0f}s bonus next round!")
+            if streak and streak%5==0: mult*=BONUS_MULTIPLIER
+            pts=int(base*mult)
+            score+=pts; streak+=1
+            best_streak=max(best_streak,streak)
+            print(f"✅ Correct! +{pts} pts (Streak {streak})\n")
         else:
-            print(f"❌ Wrong! It was {correct_octet} ({['1st','2nd','3rd','4th'][correct_octet-1]}).")
+            print(f"❌ Wrong → {correct} ({['1st','2nd','3rd','4th'][correct-1]})")
             print(visual_explanation(cidr))
-            score = max(0, score - WRONG_PENALTY)
-            time_left -= WRONG_TIME_PENALTY
-            streak = 0
-            multiplier = 1.0
-            print(f"💀 -{WRONG_PENALTY} pts | -{WRONG_TIME_PENALTY:.1f}s | Score:{score}\n")
+            score=max(0,score-WRONG_PENALTY)
+            streak=0; mult=1.0
+            print(f"💀 -{WRONG_PENALTY} pts | Score {score}\n")
 
-        if time_left <= 0:
-            break
+    # ---- save results ----
+    data["scores"].setdefault(name,{})
+    data["scores"][name]["highscore"]=max(highscore,score)
+    data["scores"][name]["best_streak"]=max(best_streak,streak)
+    save_scores(data)
+    print(f"\n=== Session End ===\nScore:{score}  Best Streak:{best_streak}\n")
+    print(f"🏆 High Score ({name}): {data['scores'][name]['highscore']}\n")
 
-    # Save and end
-    progress["changing_octet_highscore"] = max(progress.get("changing_octet_highscore", 0), score)
-    progress["changing_octet_best_streak"] = max(progress.get("changing_octet_best_streak", 0), best_streak)
-    save_progress(progress)
+# -------- main menu --------
+def main():
+    data=load_scores()
+    while True:
+        print("=== Changing Octet Challenge v4 ===")
+        print("1) Start new game")
+        print("2) View high scores")
+        print("3) Quit")
+        c=input("> ").strip()
+        if c=="1":
+            name=input("Enter your name: ").strip() or "Player"
+            play(name,data)
+        elif c=="2":
+            show_highscores(data)
+        elif c=="3":
+            print("Goodbye!"); break
+        else:
+            print("Choose 1-3.\n")
 
-    print("\n=== ⏰ TIME'S UP! ===")
-    print(f"Final Score: {score} | Best Streak: {best_streak}")
-    print(f"🏆 High Score: {progress['changing_octet_highscore']} | Longest Streak: {progress['changing_octet_best_streak']}")
-    print("Keep practicing your reflexes to improve your subnetting speed!\n")
-
-# ---------- Main ----------
-if __name__ == "__main__":
-    try:
-        play()
+if __name__=="__main__":
+    try: main()
     except KeyboardInterrupt:
-        print("\nInterrupted. Goodbye!")
-        sys.exit(0)
+        print("\nInterrupted."); sys.exit(0)
