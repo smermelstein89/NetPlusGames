@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 """
-Magic Number Sprint v2 — Guided Learning Edition
-------------------------------------------------
-Trains quick recognition of the "magic number" (block size) for a CIDR or mask.
-Includes:
- • Rules / example mode
- • Timed competitive mode
- • Global high-score leaderboard
+Magic Number Sprint v2.1 — Guided Learning Edition (Dynamic Trial)
+------------------------------------------------------------------
+Adds a random, untimed example in the rules section so each tutorial is unique.
 """
 
 import ipaddress, json, os, random, signal, sys, time
@@ -84,29 +80,39 @@ def get_time_for_question(q):
 def explain_rules():
     print("\n📘 Magic Number Sprint – Rules and Example")
     print("""
-A subnet's *magic number* (block size) is how much the *changing octet* increases between subnets.
+A subnet's *magic number* (block size) is how much the *changing octet* increases
+between subnets.
 
-Example:
-  CIDR /26 → 255.255.255.192
-  256 – 192 = 64 → magic number = 64
+Formula:  Magic Number = 256 − (value of the subnet mask in the changing octet)
+
+Example:  /26 → 255.255.255.192 → 256 − 192 = 64
 
 That means subnets start at:
-  0–63, 64–127, 128–191, 192–255 (in the last octet).
+  0–63, 64–127, 128–191, 192–255 (in the last octet)
 
 You'll be shown a CIDR prefix or a mask.
-Type the correct magic number.
+Type the correct magic number — the block size for that subnet.
 """)
-    # trial round
-    print("\nLet's try one untimed example:")
-    trial_cidr=26
-    mask="255.255.255.192"
-    print(f"Example CIDR: /{trial_cidr} ({mask})")
-    ans=input("👉 Enter the magic number: ").strip()
-    if ans=="64": print("✅ Correct! /26 → 64 block size.\n")
+
+    # dynamic random trial
+    trial_cidr = random.randint(8, 30)
+    mask = str(ipaddress.ip_network(f"0.0.0.0/{trial_cidr}").netmask)
+    correct = magic_number(trial_cidr)
+
+    print(f"Let's try an untimed example:\n  CIDR: /{trial_cidr} ({mask})")
+    ans = input("👉 Enter the magic number: ").strip()
+
+    if ans == str(correct):
+        print(f"✅ Correct! /{trial_cidr} → Magic number = {correct}")
     else:
-        print("❌ Not quite. The answer is 64.\n")
+        print(f"❌ Not quite. /{trial_cidr} → Magic number = {correct}")
         print(visual_hint(trial_cidr))
-    input("Press Enter to return to menu…\n")
+
+    print("\nExplanation:")
+    print(f"The mask in the changing octet is {mask.split('.')[detect_octet(trial_cidr)-1]}.")
+    print(f"256 − {mask.split('.')[detect_octet(trial_cidr)-1]} = {correct}, "
+          f"so each subnet increases by {correct}.")
+    input("\nPress Enter to return to menu…\n")
 
 # ---------- game core ----------
 def play(name,data):
@@ -119,8 +125,7 @@ def play(name,data):
         q+=1
         base_t=max(get_time_for_question(q),MIN_TIME)
         time_limit=base_t+extra_time; extra_time=0
-        if time_limit<=0:
-            print("\n🕑 Timer exhausted!"); break
+        if time_limit<=0: print("\n🕑 Timer exhausted!"); break
 
         cidr=random.randint(0,30)
         mask=str(ipaddress.ip_network(f"0.0.0.0/{cidr}").netmask)
@@ -185,7 +190,7 @@ def play(name,data):
 def main():
     data=load_scores()
     while True:
-        print("=== Magic Number Sprint v2 ===")
+        print("=== Magic Number Sprint v2.1 ===")
         print("1) Start new game")
         print("2) Explain rules / Trial round")
         print("3) View global high scores")
@@ -198,8 +203,7 @@ def main():
         elif c=="3": show_highscores(data)
         elif c=="4":
             print("Goodbye!"); break
-        else:
-            print("Choose 1-4.\n")
+        else: print("Choose 1-4.\n")
 
 if __name__=="__main__":
     try: main()
