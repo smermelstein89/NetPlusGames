@@ -28,5 +28,27 @@
   ],
   "speedrun": [],
   "endless": [],
-  "learning": []
+  "learning": [],
+  "lv0_learning": [
+    {
+      "name": "snmm",
+      "score": 33,
+      "attempted": 44,
+      "percent": 100.0,
+      "duration": 368.1,
+      "time": "2025-11-03 21:33:15"
+    }
+  ],
+  "lv0_learning_cidr2mask": [],
+  "lv0_learning_mask2cidr": [
+    {
+      "name": "smm",
+      "score": 33,
+      "attempted": 33,
+      "percent": 100.0,
+      "duration": 164.9,
+      "time": "2025-11-03 21:36:44"
+    }
+  ],
+  "lv0_learning_mixed": []
 }
