@@ -1,0 +1,32 @@
+{
+  "classic": [
+    {
+      "name": "smm",
+      "score": 15,
+      "avg_time": 11.178456723690033
+    },
+    {
+      "name": "smm",
+      "score": 9,
+      "time": "2025-11-03 20:39:39",
+      "avg_time": 8.178195214271545
+    }
+  ],
+  "cidr_to_mask": [
+    {
+      "name": "smm",
+      "score": 7,
+      "time": "2025-11-03 20:44:45"
+    }
+  ],
+  "mask_to_cidr": [
+    {
+      "name": "smm",
+      "score": 9,
+      "time": "2025-11-03 20:46:51"
+    }
+  ],
+  "speedrun": [],
+  "endless": [],
+  "learning": []
+}
