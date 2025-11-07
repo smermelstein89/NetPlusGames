@@ -1,0 +1,22 @@
+{
+  "players": {
+    "smm": {
+      "highscore": 500,
+      "best_streak": 5
+    }
+  },
+  "runs": [
+    {
+      "name": "smm",
+      "score": 500,
+      "streak": 5,
+      "time": "2025-11-02 22:05"
+    },
+    {
+      "name": "smm",
+      "score": 0,
+      "streak": 5,
+      "time": "2025-11-06 22:34"
+    }
+  ]
+}
