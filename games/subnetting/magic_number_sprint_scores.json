@@ -1,7 +1,7 @@
 {
   "players": {
     "smm": {
-      "highscore": 500,
+      "highscore": 875,
       "best_streak": 5
     }
   },
@@ -17,6 +17,12 @@
       "score": 0,
       "streak": 5,
       "time": "2025-11-06 22:34"
+    },
+    {
+      "name": "smm",
+      "score": 875,
+      "streak": 5,
+      "time": "2025-11-06 22:44"
     }
   ]
 }
