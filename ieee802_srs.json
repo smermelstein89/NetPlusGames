@@ -1,0 +1,74 @@
+{
+  "802.1D": {
+    "interval": 1,
+    "due": 1762543412.8552332,
+    "seen": 1,
+    "correct": 0
+  },
+  "802.1Q": {
+    "interval": 1,
+    "due": 0,
+    "seen": 0,
+    "correct": 0
+  },
+  "802.1X": {
+    "interval": 1,
+    "due": 1762543423.1371515,
+    "seen": 1,
+    "correct": 0
+  },
+  "802.3": {
+    "interval": 1,
+    "due": 0,
+    "seen": 0,
+    "correct": 0
+  },
+  "802.3af": {
+    "interval": 1,
+    "due": 0,
+    "seen": 0,
+    "correct": 0
+  },
+  "802.3at": {
+    "interval": 1,
+    "due": 0,
+    "seen": 0,
+    "correct": 0
+  },
+  "802.11": {
+    "interval": 1,
+    "due": 0,
+    "seen": 0,
+    "correct": 0
+  },
+  "802.11n": {
+    "interval": 1,
+    "due": 0,
+    "seen": 0,
+    "correct": 0
+  },
+  "802.11ac": {
+    "interval": 1,
+    "due": 0,
+    "seen": 0,
+    "correct": 0
+  },
+  "802.11ax": {
+    "interval": 1,
+    "due": 0,
+    "seen": 0,
+    "correct": 0
+  },
+  "802.15.1": {
+    "interval": 1,
+    "due": 1762543431.359203,
+    "seen": 1,
+    "correct": 0
+  },
+  "802.15.4": {
+    "interval": 1,
+    "due": 0,
+    "seen": 0,
+    "correct": 0
+  }
+}
