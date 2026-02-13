@@ -1,3 +1,4 @@
+
 import os
 import json
 import time
@@ -6,7 +7,6 @@ import subprocess
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-
 # ===============================
 # CONFIG
 # ===============================
@@ -14,13 +14,6 @@ from typing import Callable, Optional
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LEVELS_DIR = os.path.join(BASE_DIR, "levels")
 HIGHSCORE_FILE = os.path.join(BASE_DIR, "highscores.json")
-UNLOCK_SCORE_THRESHOLD = 300
-DIFFICULTIES = {
-    "1": {"name": "Casual", "hint_penalty": 10, "speed_bonus_time": 20},
-    "2": {"name": "Standard", "hint_penalty": 25, "speed_bonus_time": 15},
-    "3": {"name": "Exam Mode", "hint_penalty": 100, "speed_bonus_time": 10}
-}
-
 
 ALLOWED_COMMANDS = {
     "date",
@@ -29,9 +22,7 @@ ALLOWED_COMMANDS = {
     "head",
     "tail",
     "timedatectl",
-    "passwd",
 }
-
 
 # ===============================
 # DATA STRUCTURE
@@ -45,38 +36,32 @@ class Step:
     hint: Optional[str] = None
     explanation: Optional[str] = None
 
+# ===============================
+# UTILITIES
+# ===============================
 
-# ===============================
-# UTILITY FUNCTIONS
-# ===============================
+def clear_screen():
+    os.system("cls" if os.name == "nt" else "clear")
+
 
 def execute_command(cmd: str) -> str:
-    """
-    Execute whitelisted system commands safely.
-    """
     parts = shlex.split(cmd)
-
     if not parts:
         return ""
-
     base = parts[0]
-
     if base not in ALLOWED_COMMANDS:
         return f"bash: {base}: command not found"
-
     try:
-        result = subprocess.run(
-            parts,
-            capture_output=True,
-            text=True,
-            check=False
-        )
+        result = subprocess.run(parts, capture_output=True, text=True, check=False)
         return result.stdout.strip()
     except Exception as e:
         return f"Error executing command: {e}"
 
 
 def create_default_level():
+    if not os.path.exists(LEVELS_DIR):
+        os.makedirs(LEVELS_DIR)
+
     default_level = {
         "level_name": "CLI Basics",
         "description": "Fundamental shell commands",
@@ -101,28 +86,21 @@ def create_default_level():
     }
 
     default_path = os.path.join(LEVELS_DIR, "cli_basics.json")
-
     with open(default_path, "w") as f:
         json.dump(default_level, f, indent=4)
-
-    print("Created default level: cli_basics.json")
 
 
 def load_levels():
     if not os.path.exists(LEVELS_DIR):
-        os.makedirs(LEVELS_DIR)
+        create_default_level()
 
-    json_files = [
-        f for f in os.listdir(LEVELS_DIR)
-        if f.endswith(".json")
-    ]
+    json_files = [f for f in os.listdir(LEVELS_DIR) if f.endswith(".json")]
 
     if not json_files:
         create_default_level()
         json_files = ["cli_basics.json"]
 
     levels = []
-
     for file in json_files:
         full_path = os.path.join(LEVELS_DIR, file)
         with open(full_path, "r") as f:
@@ -131,13 +109,16 @@ def load_levels():
     return levels
 
 
-
 def save_highscore(level_name, player_name, score):
     if os.path.exists(HIGHSCORE_FILE):
         with open(HIGHSCORE_FILE, "r") as f:
             scores = json.load(f)
     else:
         scores = {}
+
+    # 🔥 If old format (list), convert it
+    if isinstance(scores, list):
+        scores = {"Legacy": scores}
 
     if level_name not in scores:
         scores[level_name] = []
@@ -155,6 +136,25 @@ def save_highscore(level_name, player_name, score):
     return scores[level_name]
 
 
+def show_leaderboard():
+    clear_screen()
+    print("\n🏆 HIGH SCORES 🏆\n")
+
+    if not os.path.exists(HIGHSCORE_FILE):
+        print("No scores recorded yet.")
+        input("\nPress Enter to return...")
+        return
+
+    with open(HIGHSCORE_FILE, "r") as f:
+        scores = json.load(f)
+
+    for level, entries in scores.items():
+        print(f"\n=== {level} ===")
+        for i, entry in enumerate(entries, 1):
+            print(f"{i}. {entry['name']} - {entry['score']}")
+
+    input("\nPress Enter to return to the main menu...")
+
 
 # ===============================
 # GAME ENGINE
@@ -168,29 +168,15 @@ class RHCSAGame:
         self.streak = 0
         self.level_name = ""
         self.start_time = None
-        self.difficulty = None
-    def select_difficulty(self):
-        clear_screen()
-        print("Select Difficulty:\n")
-
-        for key, diff in DIFFICULTIES.items():
-            print(f"{key}. {diff['name']}")
-
-        choice = input("\nChoice: ").strip()
-        self.difficulty = DIFFICULTIES.get(choice, DIFFICULTIES["2"])
 
     def build_validator(self, step_data):
         vtype = step_data.get("validator")
-
         if vtype == "exact":
             return lambda cmd: cmd.strip() == step_data["answer"]
-
         if vtype == "contains":
             return lambda cmd: step_data["answer"] in cmd
-
         if vtype == "starts_with":
             return lambda cmd: cmd.startswith(step_data["answer"])
-
         return None
 
     def load_level(self, level_data):
@@ -208,7 +194,8 @@ class RHCSAGame:
             self.steps.append(step)
 
     def run(self):
-        print("\n==============================")
+        clear_screen()
+        print("==============================")
         print("🟥 RHCSA TRAINING PLATFORM 🟥")
         print("==============================")
         print(f"\nLevel: {self.level_name}")
@@ -226,6 +213,8 @@ class RHCSAGame:
         print("\n🏆 HIGH SCORES 🏆")
         for i, entry in enumerate(scores, 1):
             print(f"{i}. {entry['name']} - {entry['score']}")
+
+        input("\nPress Enter to return to the main menu...")
 
     def run_step(self, index, step):
         print(f"\nSTEP {index}: {step.id}")
@@ -292,54 +281,6 @@ class RHCSAGame:
                 if output:
                     print(output)
                 print("✖ Incorrect. Try again or type 'hint'.")
-        game = RHCSAGame()
-        game.select_difficulty()
-        game.load_level(levels[level_choice])
-        game.run() 
-        
-
-# ===============================
-# LEADERBOARD
-# ===============================
-def show_leaderboard():
-    clear_screen()
-    print("\n🏆 HIGH SCORES 🏆\n")
-
-    if not os.path.exists(HIGHSCORE_FILE):
-        print("No scores recorded yet.")
-        input("\nPress Enter to return...")
-        return
-
-    with open(HIGHSCORE_FILE, "r") as f:
-        scores = json.load(f)
-
-    for level, entries in scores.items():
-        print(f"\n=== {level} ===")
-        for i, entry in enumerate(entries, 1):
-            print(f"{i}. {entry['name']} - {entry['score']}")
-
-    input("\nPress Enter to return to the main menu...")
-
-
-def clear_screen():
-    os.system("cls" if os.name == "nt" else "clear")
-
-def is_level_unlocked(level_name):
-    if not os.path.exists(HIGHSCORE_FILE):
-        return True
-
-    with open(HIGHSCORE_FILE, "r") as f:
-        scores = json.load(f)
-
-    if level_name not in scores:
-        return True
-
-    top_score = max(entry["score"] for entry in scores[level_name])
-    return top_score >= UNLOCK_SCORE_THRESHOLD
-if not unlocked_levels[level_choice]:
-    print("Level locked. Achieve required score to unlock.")
-    input("Press Enter to continue...")
-    continue
 
 
 # ===============================
@@ -348,9 +289,8 @@ if not unlocked_levels[level_choice]:
 
 def main():
     while True:
-        levels = load_levels()
-
         clear_screen()
+
         print("==============================")
         print("🟥 RHCSA TRAINING PLATFORM 🟥")
         print("==============================")
@@ -361,35 +301,24 @@ def main():
         choice = input("\nSelect an option: ").strip()
 
         if choice == "1":
-            if not levels:
-                print("No levels available.")
-                continue
+            levels = load_levels()
 
             print("\nAvailable Levels:\n")
-
-            unlocked_levels = []
-
             for i, lvl in enumerate(levels, 1):
-                unlocked = is_level_unlocked(lvl["level_name"])
-                status = "🔓" if unlocked else "🔒"
-                print(f"{i}. {status} {lvl['level_name']} - {lvl.get('description','')}")
-                unlocked_levels.append(unlocked)
-
+                print(f"{i}. {lvl['level_name']} - {lvl.get('description','')}")
 
             try:
                 level_choice = int(input("\nSelect a level: ")) - 1
                 if level_choice < 0 or level_choice >= len(levels):
-                    print("Invalid selection.")
+                    input("Invalid selection. Press Enter to continue...")
                     continue
             except ValueError:
-                print("Invalid input.")
+                input("Invalid input. Press Enter to continue...")
                 continue
 
             game = RHCSAGame()
             game.load_level(levels[level_choice])
-            clear_screen()
             game.run()
-            input("\nPress Enter to return to the main menu...")
 
         elif choice == "2":
             show_leaderboard()
@@ -399,7 +328,7 @@ def main():
             break
 
         else:
-            print("Invalid selection.")
+            input("Invalid selection. Press Enter to continue...")
 
 
 if __name__ == "__main__":

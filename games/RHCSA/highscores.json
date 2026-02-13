@@ -1,6 +1,14 @@
-[
-    {
-        "name": "smm",
-        "score": 240
-    }
-]
+{
+    "Legacy": [
+        {
+            "name": "smm",
+            "score": 240
+        }
+    ],
+    "CLI Basics": [
+        {
+            "name": "smm",
+            "score": 230
+        }
+    ]
+}
