@@ -2,6 +2,9 @@
 from dataclasses import dataclass
 from typing import Callable, Optional
 import datetime
+import time
+import json
+import os
 
 # step 2: Define the Step Object
 @dataclass
@@ -52,7 +55,12 @@ def is_history_search(cmd):
 
 # Step 5 : shell Feedback (This Makes It Feel Real)
 def shell_feedback(cmd):
-    base = cmd.split()[0]
+    # Empty command → no feedback, just reprompt
+    if not cmd.strip():
+        return None
+
+    parts = cmd.split()
+    base = parts[0]
 
     allowed = ["date", "file", "wc", "head", "tail", "!!", "!-1"]
 
@@ -60,6 +68,7 @@ def shell_feedback(cmd):
         return f"bash: {base}: command not found"
 
     return None
+
 
 # step 6: game engine (Core loop)
 class RHCSAGame:
@@ -69,6 +78,10 @@ class RHCSAGame:
 
     def run(self):
         print("\n🟥 RHCSA COMMAND LINE PRACTICE 🟥\n")
+        print("Type commands as you would on a Red Hat system.")
+        print("Type 'hint' at any time for help.")
+        print("Type Ctrl+C to exit.\n")
+
 
         while self.current_step < len(self.steps):
             step = self.steps[self.current_step]
@@ -83,15 +96,21 @@ class RHCSAGame:
         print(step.prompt)
 
         while True:
-            user_input = input("\nstudent@workstation$ ").strip()
+            user_input = input("\n[RHC-SA PRACTICE] student@workstation$ ").strip()
 
+            # Game-level commands FIRST
+            if user_input.lower() == "hint" and step.hint:
+                print(f"💡 Hint: {step.hint}")
+                continue
+
+            # Empty input → reprompt
+            if not user_input:
+                continue
+
+            # Shell-like feedback SECOND
             feedback = shell_feedback(user_input)
             if feedback:
                 print(feedback)
-                continue
-
-            if user_input.lower() == "hint" and step.hint:
-                print(f"💡 Hint: {step.hint}")
                 continue
 
             if self.evaluate(step, user_input):
@@ -184,7 +203,7 @@ steps = [
     )
 ]
 
-Step 8: Run the Game
+# Step 8: Run the Game
 
 def main():
     game = RHCSAGame(steps)

@@ -1,0 +1,22 @@
+{
+  "level_name": "CLI Basics",
+  "description": "Fundamental command line operations",
+  "steps": [
+    {
+      "id": "CLI-01",
+      "prompt": "Display the current time and date.",
+      "validator": "exact",
+      "answer": "date",
+      "hint": "Single command.",
+      "explanation": "The date command shows system time."
+    },
+    {
+      "id": "CLI-02",
+      "prompt": "Display the time in 24-hour format.",
+      "validator": "contains",
+      "answer": "%R",
+      "hint": "Use a format string.",
+      "explanation": "date +%R prints HH:MM."
+    }
+  ]
+}
