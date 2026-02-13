@@ -1,213 +1,298 @@
-# step 1: Imports & Data Structures (Top of File)
+import os
+import json
+import time
+import shlex
+import subprocess
 from dataclasses import dataclass
 from typing import Callable, Optional
-import datetime
-import time
-import json
-import os
 
-# step 2: Define the Step Object
+
+# ===============================
+# CONFIG
+# ===============================
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LEVELS_DIR = os.path.join(BASE_DIR, "levels")
+HIGHSCORE_FILE = os.path.join(BASE_DIR, "highscores.json")
+
+
+ALLOWED_COMMANDS = {
+    "date",
+    "file",
+    "wc",
+    "head",
+    "tail",
+    "timedatectl",
+    "passwd",
+}
+
+
+# ===============================
+# DATA STRUCTURE
+# ===============================
+
 @dataclass
 class Step:
     id: str
     prompt: str
-    expected_answer: Optional[str] = None
     validator: Optional[Callable[[str], bool]] = None
     hint: Optional[str] = None
     explanation: Optional[str] = None
 
-# step 3: Simulated “Red Hat” Environment, Mock file system for demonstration purposes
-FAKE_FILES = {
-    "/home/student/zcat": {
-        "type": "ASCII text",
-        "lines": [f"Line {i}" for i in range(1, 101)],
-        "size": 100
-    }
-}
 
-# step 4: Validators (Command Logic)
-def is_date(cmd):
-    return cmd == "date"
+# ===============================
+# UTILITY FUNCTIONS
+# ===============================
 
-def is_date_24h(cmd):
-    return cmd.startswith("date") and "%R" in cmd
+def execute_command(cmd: str) -> str:
+    """
+    Execute whitelisted system commands safely.
+    """
+    parts = shlex.split(cmd)
 
-def is_file_type(cmd):
-    return cmd in ["file /home/student/zcat", "file ~/zcat"]
+    if not parts:
+        return ""
 
-def is_wc(cmd):
-    return cmd.startswith("wc") and "zcat" in cmd
-
-def is_head_10(cmd):
-    return cmd in ["head /home/student/zcat", "head -n 10 /home/student/zcat"]
-
-def is_tail_10(cmd):
-    return cmd in ["tail /home/student/zcat", "tail -n 10 /home/student/zcat"]
-
-def is_repeat_previous(cmd):
-    return cmd in ["!!", "!-1"]
-
-def is_tail_20(cmd):
-    return cmd.startswith("tail") and "-n 20" in cmd
-
-def is_history_search(cmd):
-    return "^R" in cmd
-
-# Step 5 : shell Feedback (This Makes It Feel Real)
-def shell_feedback(cmd):
-    # Empty command → no feedback, just reprompt
-    if not cmd.strip():
-        return None
-
-    parts = cmd.split()
     base = parts[0]
 
-    allowed = ["date", "file", "wc", "head", "tail", "!!", "!-1"]
-
-    if base not in allowed and "%R" not in cmd and "^R" not in cmd:
+    if base not in ALLOWED_COMMANDS:
         return f"bash: {base}: command not found"
 
-    return None
+    try:
+        result = subprocess.run(
+            parts,
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        return result.stdout.strip()
+    except Exception as e:
+        return f"Error executing command: {e}"
 
 
-# step 6: game engine (Core loop)
+def create_default_level():
+    default_level = {
+        "level_name": "CLI Basics",
+        "description": "Fundamental shell commands",
+        "steps": [
+            {
+                "id": "CLI-01",
+                "prompt": "Display the current date and time.",
+                "validator": "exact",
+                "answer": "date",
+                "hint": "Single command.",
+                "explanation": "date shows system time."
+            },
+            {
+                "id": "CLI-02",
+                "prompt": "Display time in 24-hour format.",
+                "validator": "contains",
+                "answer": "%R",
+                "hint": "Use a format string.",
+                "explanation": "date +%R prints HH:MM."
+            }
+        ]
+    }
+
+    default_path = os.path.join(LEVELS_DIR, "cli_basics.json")
+
+    with open(default_path, "w") as f:
+        json.dump(default_level, f, indent=4)
+
+    print("Created default level: cli_basics.json")
+
+
+def load_levels():
+    if not os.path.exists(LEVELS_DIR):
+        os.makedirs(LEVELS_DIR)
+
+    json_files = [
+        f for f in os.listdir(LEVELS_DIR)
+        if f.endswith(".json")
+    ]
+
+    if not json_files:
+        create_default_level()
+        json_files = ["cli_basics.json"]
+
+    levels = []
+
+    for file in json_files:
+        full_path = os.path.join(LEVELS_DIR, file)
+        with open(full_path, "r") as f:
+            levels.append(json.load(f))
+
+    return levels
+
+
+
+def save_highscore(player_name, score):
+    if os.path.exists(HIGHSCORE_FILE):
+        with open(HIGHSCORE_FILE, "r") as f:
+            scores = json.load(f)
+    else:
+        scores = []
+
+    scores.append({"name": player_name, "score": score})
+    scores = sorted(scores, key=lambda x: x["score"], reverse=True)[:10]
+
+    with open(HIGHSCORE_FILE, "w") as f:
+        json.dump(scores, f, indent=4)
+
+    return scores
+
+
+# ===============================
+# GAME ENGINE
+# ===============================
+
 class RHCSAGame:
-    def __init__(self, steps):
-        self.steps = steps
-        self.current_step = 0
+
+    def __init__(self):
+        self.steps = []
+        self.score = 0
+        self.streak = 0
+        self.level_name = ""
+        self.start_time = None
+
+    def build_validator(self, step_data):
+        vtype = step_data.get("validator")
+
+        if vtype == "exact":
+            return lambda cmd: cmd.strip() == step_data["answer"]
+
+        if vtype == "contains":
+            return lambda cmd: step_data["answer"] in cmd
+
+        if vtype == "starts_with":
+            return lambda cmd: cmd.startswith(step_data["answer"])
+
+        return None
+
+    def load_level(self, level_data):
+        self.level_name = level_data["level_name"]
+        self.steps = []
+
+        for s in level_data["steps"]:
+            step = Step(
+                id=s["id"],
+                prompt=s["prompt"],
+                validator=self.build_validator(s),
+                hint=s.get("hint"),
+                explanation=s.get("explanation")
+            )
+            self.steps.append(step)
 
     def run(self):
-        print("\n🟥 RHCSA COMMAND LINE PRACTICE 🟥\n")
-        print("Type commands as you would on a Red Hat system.")
-        print("Type 'hint' at any time for help.")
-        print("Type Ctrl+C to exit.\n")
+        print("\n==============================")
+        print("🟥 RHCSA TRAINING PLATFORM 🟥")
+        print("==============================")
+        print(f"\nLevel: {self.level_name}")
+        print("Type 'hint' for help. Ctrl+C to exit.\n")
 
+        for index, step in enumerate(self.steps, 1):
+            self.run_step(index, step)
 
-        while self.current_step < len(self.steps):
-            step = self.steps[self.current_step]
-            self.run_step(step)
-            self.current_step += 1
+        print("\n🏁 Level Complete!")
+        print(f"Final Score: {self.score}")
 
-        print("\n✅ Lab complete.\n")
+        player = input("Enter your name for the leaderboard: ")
+        scores = save_highscore(player, self.score)
 
-    def run_step(self, step):
-        print(f"\nSTEP {self.current_step + 1}: {step.id}")
-        print("-" * 50)
+        print("\n🏆 HIGH SCORES 🏆")
+        for i, entry in enumerate(scores, 1):
+            print(f"{i}. {entry['name']} - {entry['score']}")
+
+    def run_step(self, index, step):
+        print(f"\nSTEP {index}: {step.id}")
+        print("-" * 40)
         print(step.prompt)
+
+        attempts = 0
+        hint_used = False
+        self.start_time = time.time()
 
         while True:
             user_input = input("\n[RHC-SA PRACTICE] student@workstation$ ").strip()
 
-            # Game-level commands FIRST
-            if user_input.lower() == "hint" and step.hint:
-                print(f"💡 Hint: {step.hint}")
-                continue
-
-            # Empty input → reprompt
             if not user_input:
                 continue
 
-            # Shell-like feedback SECOND
-            feedback = shell_feedback(user_input)
-            if feedback:
-                print(feedback)
+            if user_input.lower() == "hint":
+                if step.hint:
+                    print(f"💡 Hint: {step.hint}")
+                    hint_used = True
+                else:
+                    print("No hint available.")
                 continue
 
-            if self.evaluate(step, user_input):
+            attempts += 1
+
+            if step.validator and step.validator(user_input):
+
+                elapsed = time.time() - self.start_time
+                output = execute_command(user_input)
+
+                if output:
+                    print(output)
+
+                points = 100
+                points -= (attempts - 1) * 10
+
+                if hint_used:
+                    points -= 25
+
+                if elapsed < 15:
+                    points += 20
+
+                self.streak += 1
+                if self.streak >= 3:
+                    points += 50
+
+                points = max(points, 0)
+                self.score += points
+
                 print("✔ Correct")
+                print(f"🏅 +{points} points")
+                print(f"🔥 Streak: {self.streak}")
+                print(f"💯 Total Score: {self.score}")
+
                 if step.explanation:
                     print(f"📘 {step.explanation}")
+
                 break
+
             else:
+                self.streak = 0
+                output = execute_command(user_input)
+                if output:
+                    print(output)
                 print("✖ Incorrect. Try again or type 'hint'.")
 
-    def evaluate(self, step, user_input):
-        if step.validator:
-            return step.validator(user_input)
-        if step.expected_answer:
-            return user_input == step.expected_answer
-        return False
-    
-# Step 7: Define the Lab Steps: Step Definitions (The Actual Steps)
-steps = [
-    Step(
-        id="CLI-01",
-        prompt="Use a command to display the current time and date.",
-        validator=is_date,
-        hint="There is a single command for this.",
-        explanation="The date command displays the system date and time."
-    ),
 
-    Step(
-        id="CLI-02",
-        prompt="Display the current time in 24-hour format.",
-        validator=is_date_24h,
-        hint="Use a format string.",
-        explanation="date +%R prints time in HH:MM format."
-    ),
-
-    Step(
-        id="CLI-03",
-        prompt="What kind of file is /home/student/zcat? Is it readable by humans?",
-        validator=is_file_type,
-        hint="Use a command that inspects file contents.",
-        explanation="ASCII text files are human-readable."
-    ),
-
-    Step(
-        id="CLI-04",
-        prompt="Use wc to display the size of the zcat file.",
-        validator=is_wc,
-        hint="wc -l counts lines.",
-        explanation="wc shows line, word, and byte counts."
-    ),
-
-    Step(
-        id="CLI-05",
-        prompt="Display the first 10 lines of the zcat file.",
-        validator=is_head_10,
-        hint="Default behavior.",
-        explanation="head prints the first 10 lines."
-    ),
-
-    Step(
-        id="CLI-06",
-        prompt="Display the last 10 lines of the zcat file.",
-        validator=is_tail_10,
-        hint="Opposite of head.",
-        explanation="tail prints the last 10 lines."
-    ),
-
-    Step(
-        id="CLI-07",
-        prompt="Repeat the previous command using four or fewer keystrokes.",
-        validator=is_repeat_previous,
-        hint="History expansion.",
-        explanation="!! repeats the last command."
-    ),
-
-    Step(
-        id="CLI-08",
-        prompt="Display the last 20 lines of zcat using minimal keystrokes.",
-        validator=is_tail_20,
-        hint="Reuse the previous command.",
-        explanation="tail -n 20 prints the last 20 lines."
-    ),
-
-    Step(
-        id="CLI-09",
-        prompt="Use shell history to run date +%R again.",
-        validator=is_history_search,
-        hint="Reverse search.",
-        explanation="Ctrl+R searches command history."
-    )
-]
-
-# Step 8: Run the Game
+# ===============================
+# MAIN
+# ===============================
 
 def main():
-    game = RHCSAGame(steps)
+    levels = load_levels()
+
+    if not levels:
+        print("No levels found in 'levels/' directory.")
+        print("Create a JSON level file to begin.")
+        return
+
+    print("\nAvailable Levels:\n")
+
+    for i, lvl in enumerate(levels, 1):
+        print(f"{i}. {lvl['level_name']} - {lvl.get('description','')}")
+
+    choice = int(input("\nSelect a level: ")) - 1
+
+    game = RHCSAGame()
+    game.load_level(levels[choice])
     game.run()
+
 
 if __name__ == "__main__":
     main()
