@@ -14,6 +14,12 @@ from typing import Callable, Optional
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LEVELS_DIR = os.path.join(BASE_DIR, "levels")
 HIGHSCORE_FILE = os.path.join(BASE_DIR, "highscores.json")
+UNLOCK_SCORE_THRESHOLD = 300
+DIFFICULTIES = {
+    "1": {"name": "Casual", "hint_penalty": 10, "speed_bonus_time": 20},
+    "2": {"name": "Standard", "hint_penalty": 25, "speed_bonus_time": 15},
+    "3": {"name": "Exam Mode", "hint_penalty": 100, "speed_bonus_time": 10}
+}
 
 
 ALLOWED_COMMANDS = {
@@ -126,20 +132,28 @@ def load_levels():
 
 
 
-def save_highscore(player_name, score):
+def save_highscore(level_name, player_name, score):
     if os.path.exists(HIGHSCORE_FILE):
         with open(HIGHSCORE_FILE, "r") as f:
             scores = json.load(f)
     else:
-        scores = []
+        scores = {}
 
-    scores.append({"name": player_name, "score": score})
-    scores = sorted(scores, key=lambda x: x["score"], reverse=True)[:10]
+    if level_name not in scores:
+        scores[level_name] = []
+
+    scores[level_name].append({"name": player_name, "score": score})
+    scores[level_name] = sorted(
+        scores[level_name],
+        key=lambda x: x["score"],
+        reverse=True
+    )[:10]
 
     with open(HIGHSCORE_FILE, "w") as f:
         json.dump(scores, f, indent=4)
 
-    return scores
+    return scores[level_name]
+
 
 
 # ===============================
@@ -154,6 +168,16 @@ class RHCSAGame:
         self.streak = 0
         self.level_name = ""
         self.start_time = None
+        self.difficulty = None
+    def select_difficulty(self):
+        clear_screen()
+        print("Select Difficulty:\n")
+
+        for key, diff in DIFFICULTIES.items():
+            print(f"{key}. {diff['name']}")
+
+        choice = input("\nChoice: ").strip()
+        self.difficulty = DIFFICULTIES.get(choice, DIFFICULTIES["2"])
 
     def build_validator(self, step_data):
         vtype = step_data.get("validator")
@@ -197,7 +221,7 @@ class RHCSAGame:
         print(f"Final Score: {self.score}")
 
         player = input("Enter your name for the leaderboard: ")
-        scores = save_highscore(player, self.score)
+        scores = save_highscore(self.level_name, player, self.score)
 
         print("\n🏆 HIGH SCORES 🏆")
         for i, entry in enumerate(scores, 1):
@@ -268,6 +292,54 @@ class RHCSAGame:
                 if output:
                     print(output)
                 print("✖ Incorrect. Try again or type 'hint'.")
+        game = RHCSAGame()
+        game.select_difficulty()
+        game.load_level(levels[level_choice])
+        game.run() 
+        
+
+# ===============================
+# LEADERBOARD
+# ===============================
+def show_leaderboard():
+    clear_screen()
+    print("\n🏆 HIGH SCORES 🏆\n")
+
+    if not os.path.exists(HIGHSCORE_FILE):
+        print("No scores recorded yet.")
+        input("\nPress Enter to return...")
+        return
+
+    with open(HIGHSCORE_FILE, "r") as f:
+        scores = json.load(f)
+
+    for level, entries in scores.items():
+        print(f"\n=== {level} ===")
+        for i, entry in enumerate(entries, 1):
+            print(f"{i}. {entry['name']} - {entry['score']}")
+
+    input("\nPress Enter to return to the main menu...")
+
+
+def clear_screen():
+    os.system("cls" if os.name == "nt" else "clear")
+
+def is_level_unlocked(level_name):
+    if not os.path.exists(HIGHSCORE_FILE):
+        return True
+
+    with open(HIGHSCORE_FILE, "r") as f:
+        scores = json.load(f)
+
+    if level_name not in scores:
+        return True
+
+    top_score = max(entry["score"] for entry in scores[level_name])
+    return top_score >= UNLOCK_SCORE_THRESHOLD
+if not unlocked_levels[level_choice]:
+    print("Level locked. Achieve required score to unlock.")
+    input("Press Enter to continue...")
+    continue
 
 
 # ===============================
@@ -275,23 +347,59 @@ class RHCSAGame:
 # ===============================
 
 def main():
-    levels = load_levels()
+    while True:
+        levels = load_levels()
 
-    if not levels:
-        print("No levels found in 'levels/' directory.")
-        print("Create a JSON level file to begin.")
-        return
+        clear_screen()
+        print("==============================")
+        print("🟥 RHCSA TRAINING PLATFORM 🟥")
+        print("==============================")
+        print("1. Play Level")
+        print("2. View Leaderboard")
+        print("3. Exit")
 
-    print("\nAvailable Levels:\n")
+        choice = input("\nSelect an option: ").strip()
 
-    for i, lvl in enumerate(levels, 1):
-        print(f"{i}. {lvl['level_name']} - {lvl.get('description','')}")
+        if choice == "1":
+            if not levels:
+                print("No levels available.")
+                continue
 
-    choice = int(input("\nSelect a level: ")) - 1
+            print("\nAvailable Levels:\n")
 
-    game = RHCSAGame()
-    game.load_level(levels[choice])
-    game.run()
+            unlocked_levels = []
+
+            for i, lvl in enumerate(levels, 1):
+                unlocked = is_level_unlocked(lvl["level_name"])
+                status = "🔓" if unlocked else "🔒"
+                print(f"{i}. {status} {lvl['level_name']} - {lvl.get('description','')}")
+                unlocked_levels.append(unlocked)
+
+
+            try:
+                level_choice = int(input("\nSelect a level: ")) - 1
+                if level_choice < 0 or level_choice >= len(levels):
+                    print("Invalid selection.")
+                    continue
+            except ValueError:
+                print("Invalid input.")
+                continue
+
+            game = RHCSAGame()
+            game.load_level(levels[level_choice])
+            clear_screen()
+            game.run()
+            input("\nPress Enter to return to the main menu...")
+
+        elif choice == "2":
+            show_leaderboard()
+
+        elif choice == "3":
+            print("Goodbye.")
+            break
+
+        else:
+            print("Invalid selection.")
 
 
 if __name__ == "__main__":
