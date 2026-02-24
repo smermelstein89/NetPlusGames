@@ -110,32 +110,35 @@ def load_levels():
 
 
 def save_highscore(level_name, player_name, score, total_time):
+    # Load existing scores if the file exists
+    scores = {}
     if os.path.exists(HIGHSCORE_FILE):
-        with open(HIGHSCORE_FILE, "r") as f:
-            scores[level_name].append({
-                "name": player_name,
-                "score": score,
-                "time": round(total_time, 2)
-})
-    else:
-        scores = {}
+        try:
+            with open(HIGHSCORE_FILE, "r") as f:
+                scores = json.load(f)
+        except Exception:
+            # If the file is corrupt or unreadable, start fresh
+            scores = {}
 
-    # 🔥 If old format (list), convert it
+    # If old format is a list, convert to a dict under 'Legacy'
     if isinstance(scores, list):
         scores = {"Legacy": scores}
 
-    if level_name not in scores:
+    # Ensure we have a list for this level
+    if level_name not in scores or not isinstance(scores[level_name], list):
         scores[level_name] = []
 
-        scores[level_name].append({
-            "name": player_name,
-            "score": score,
-            "time": round(self.total_time, 2)
-        })
-        scores[level_name] = sorted(
-        scores[level_name],
-        key=lambda x: x["score"],
-        reverse=True
+    entry = {
+        "name": player_name,
+        "score": score,
+        "time": round(total_time, 2)
+    }
+
+    scores[level_name].append(entry)
+
+    # Keep top 10 by score (descending)
+    scores[level_name] = sorted(
+        scores[level_name], key=lambda x: x.get("score", 0), reverse=True
     )[:10]
 
     with open(HIGHSCORE_FILE, "w") as f:
@@ -216,6 +219,8 @@ class RHCSAGame:
             self.run_step(index, step)
 
         print("\n🏁 Level Complete!")
+        # Compute total time now so it's available when saving the highscore
+        self.total_time = time.time() - self.level_start_time
         print(f"Final Score: {self.score}")
 
         player = input("Enter your name for the leaderboard: ")
@@ -227,7 +232,6 @@ class RHCSAGame:
             print(f"{i}. {entry['name']} - {entry['score']} pts - {time_display}s")
 
         input("\nPress Enter to return to the main menu...")
-        self.total_time = time.time() - self.level_start_time
         print(f"⏱ Total Time: {round(self.total_time, 2)} seconds")
 
     def run_step(self, index, step):
