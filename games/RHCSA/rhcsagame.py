@@ -109,10 +109,14 @@ def load_levels():
     return levels
 
 
-def save_highscore(level_name, player_name, score):
+def save_highscore(level_name, player_name, score, total_time):
     if os.path.exists(HIGHSCORE_FILE):
         with open(HIGHSCORE_FILE, "r") as f:
-            scores = json.load(f)
+            scores[level_name].append({
+                "name": player_name,
+                "score": score,
+                "time": round(total_time, 2)
+})
     else:
         scores = {}
 
@@ -123,8 +127,12 @@ def save_highscore(level_name, player_name, score):
     if level_name not in scores:
         scores[level_name] = []
 
-    scores[level_name].append({"name": player_name, "score": score})
-    scores[level_name] = sorted(
+        scores[level_name].append({
+            "name": player_name,
+            "score": score,
+            "time": round(self.total_time, 2)
+        })
+        scores[level_name] = sorted(
         scores[level_name],
         key=lambda x: x["score"],
         reverse=True
@@ -168,6 +176,8 @@ class RHCSAGame:
         self.streak = 0
         self.level_name = ""
         self.start_time = None
+        self.level_start_time = None
+        self.total_time = 0
 
     def build_validator(self, step_data):
         vtype = step_data.get("validator")
@@ -199,6 +209,7 @@ class RHCSAGame:
         print("🟥 RHCSA TRAINING PLATFORM 🟥")
         print("==============================")
         print(f"\nLevel: {self.level_name}")
+        self.level_start_time = time.time()
         print("Type 'hint' for help. Ctrl+C to exit.\n")
 
         for index, step in enumerate(self.steps, 1):
@@ -208,13 +219,16 @@ class RHCSAGame:
         print(f"Final Score: {self.score}")
 
         player = input("Enter your name for the leaderboard: ")
-        scores = save_highscore(self.level_name, player, self.score)
+        scores = save_highscore(self.level_name, player, self.score, self.total_time)
 
         print("\n🏆 HIGH SCORES 🏆")
         for i, entry in enumerate(scores, 1):
-            print(f"{i}. {entry['name']} - {entry['score']}")
+            time_display = entry.get("time", "N/A")
+            print(f"{i}. {entry['name']} - {entry['score']} pts - {time_display}s")
 
         input("\nPress Enter to return to the main menu...")
+        self.total_time = time.time() - self.level_start_time
+        print(f"⏱ Total Time: {round(self.total_time, 2)} seconds")
 
     def run_step(self, index, step):
         print(f"\nSTEP {index}: {step.id}")
@@ -255,8 +269,13 @@ class RHCSAGame:
                 if hint_used:
                     points -= 25
 
-                if elapsed < 15:
+                # Time bonus (faster = more points)
+                if elapsed < 10:
+                    points += 30
+                elif elapsed < 20:
                     points += 20
+                elif elapsed < 30:
+                    points += 10
 
                 self.streak += 1
                 if self.streak >= 3:
