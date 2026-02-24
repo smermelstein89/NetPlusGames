@@ -7,6 +7,10 @@
     ],
     "CLI Basics": [
         {
+            "name": "amm",
+            "score": 240
+        },
+        {
             "name": "smm",
             "score": 230
         }
