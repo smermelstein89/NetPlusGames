@@ -7,6 +7,16 @@
     ],
     "CLI Basics": [
         {
+            "name": "smm",
+            "score": 260,
+            "time": 8.07
+        },
+        {
+            "name": "",
+            "score": 260,
+            "time": 4.27
+        },
+        {
             "name": "amm",
             "score": 240
         },
